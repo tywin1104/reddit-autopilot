@@ -14,14 +14,19 @@ class RedditService:
         self.username = self.reddit.user.me().name
 
 
-    def post(self, subreddit, title, link):
+    def post(self, subreddit, title, link, flair_id=None):
         '''
         Post a link to the target subreddit with specified title
         :returns: the full url for the submission if successful
         '''
         reddit_base_url = "https://www.reddit.com"
 
-        submission = self.reddit.subreddit(subreddit).submit(title, url=link, nsfw=True)
+        submission = self.reddit.subreddit(subreddit).submit(
+            title,
+            url=link,
+            nsfw=True,
+            flair_id=flair_id
+        )
 
         return reddit_base_url + submission.permalink
 

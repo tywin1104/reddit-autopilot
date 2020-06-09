@@ -9,7 +9,7 @@ class Executor:
         self, reddit, db,
         running_window=(8,22),
         min_reposting_dalay=12,
-        max_reposing_delay=24,
+        max_reposting_delay=24,
         subreddit_frontpage_shreshold=10,
         run_period=120
     ):
@@ -18,7 +18,7 @@ class Executor:
         # only allow postes to be made during running_window
         self.running_window = running_window
         self.min_reposting_dalay = min_reposting_dalay
-        self.max_reposting_relay = max_reposing_delay
+        self.max_reposting_delay = max_reposting_delay
         self.subreddit_frontpage_shreshold = subreddit_frontpage_shreshold
         self.run_period = run_period
 
@@ -30,7 +30,6 @@ class Executor:
             else:
                 logging.info("Out of running window")
 
-            logging.info("Collecting stats for existing submissions")
             self.collect_stats()
 
             # Run the cycle at time intervals
@@ -43,6 +42,7 @@ class Executor:
         return start <= hour <= end
 
     def collect_stats(self):
+        logging.info("Collecting stats for existing submissions")
         pass
 
     def process_tasks(self):
@@ -58,35 +58,41 @@ class Executor:
         logging.info(f'All tasks are processed for this round. Sleeping until next round')
 
     def process_task(self, task):
-        logging.info(f'Start processing task {task["_id"]}')
+        logging.info(f'Start processing task [{task["_id"]}]')
         subreddits = task.get('subreddits', [])
         posted = False
         for index, subreddit_block in enumerate(subreddits):
             # Wait for some time to prevent reddit spamming detection
             subreddit = subreddit_block['name']
+            logging.info(f'Staring: Task [{task["_id"]}] subreddit [{subreddit}]')
             if posted:
+                print("\n")
                 time.sleep(60)
-                logging.info("Post complete. Sleeping for a while...")
                 posted = False
 
+            if subreddit_block['posted']:
+                logging.info(f'Already posted. Skip')
+
             if not subreddit_block['posted'] and self.should_post(task, subreddit):
-                self.post(task, index, subreddit)
+                # Only some subreddit_block will have flair_id set
+                flair_id = subreddit_block.get('flair_id', None)
+                self.post(task, index, subreddit, flair_id)
                 posted = True
-            logging.info(f'{task["_id"]} processed successfully')
+                logging.info(f'Task [{task["_id"]}] subreddit [{subreddit}] posted successfully')
 
 
-    def post(self, task, index, subreddit):
+    def post(self, task, index, subreddit, flair_id):
         if not task['titles']:
             raise Exception("No available titles specified for this task")
 
         title = task['titles'][index % len(task['titles'])]
 
         # Make post to subreddit
-        post_url = self.reddit.post(subreddit, title, task['gif_link'])
-        logging.info(f'Posted {post_url} successfully')
+        post_url = self.reddit.post(subreddit, title, task['gif_link'], flair_id=flair_id)
+        logging.info(f'{post_url} posted successfully')
 
         timestamp = time.time()
-        new_task = self.update_task(task, subreddit, post_url, timestamp)
+        new_task = Executor.update_task(task, subreddit, post_url, timestamp)
         # Update task in db
         self.db.task.update(new_task)
 
@@ -96,7 +102,8 @@ class Executor:
             "lastPostedTimestamp": timestamp
         })
 
-    def update_task(self, task, subreddit, post_url, timestamp):
+    @staticmethod
+    def update_task(task, subreddit, post_url, timestamp):
         # Update task document
         # update corresponding subreddit block in the task document
         subreddit_item = next(item for item in task['subreddits'] if item["name"] == subreddit)
@@ -118,12 +125,20 @@ class Executor:
         task['last_updated_timestamp'] = timestamp
         return task
 
+    @staticmethod
+    def within_last_hours(timestamp, hours):
+        now = datetime.now()
+        return now-timedelta(hours=hours) <= timestamp
+
     def should_post(self, task, subreddit):
         now = datetime.now()
         records = self.db.subreddit_record.get(subreddit)
         # first time posting on that subreddit, should allow
         if not records:
-            logging.info(f'First time posting on [{subreddit}]')
+            logging.info(
+                f'[Admission Control] ALLOWED: ' +
+                f'First time posting on [{subreddit}]'
+            )
             return True
 
         record = records[0]
@@ -131,28 +146,28 @@ class Executor:
 
         # Do not repost to the same subreddit within the min thereshold period
         # this is in place to prevent spamming the subreddits
-        min_delay = self.min_reposing_delay
+        min_delay = self.min_reposting_dalay
         if self.reddit.is_low_volume(subreddit):
             min_delay *= 2
 
-        if now - timedelta(self.min_delay) <= last_posted_time:
+        if Executor.within_last_hours(last_posted_time, min_delay):
             logging.info(
+                f'[Admission Control] DENIED: ' +
                 f'Most recent post on [{subreddit}] at [{last_posted_time}] ' +
-                f'does not satisfy min reposting delay {self.min_reposting_dalay} hours. ' +
-                f'Will not schedule this post at this time'
+                f'does not satisfy min reposting delay {min_delay} hours'
             )
             return False
 
         # If a post has not been made to a subreddit more than max threshold
         # allow to post it
-        max_delay = self.max_reposing_delay
+        max_delay = self.max_reposting_delay
         if self.reddit.is_low_volume(subreddit):
             max_delay *= 2
-        if now - timedelta(max_delay) <= last_posted_time:
+        if not Executor.within_last_hours(last_posted_time, max_delay):
             logging.info(
+                f'[Admission Control] ALLOWED: ' +
                 f'Most recent post on [{subreddit}] at [{last_posted_time}] ' +
-                f'exceeds max reposting delay {self.max_reposting_dalay} hours. ' +
-                f'Will submit this post now'
+                f'exceeds max reposting delay {max_delay} hours. '
             )
             return True
 
@@ -167,11 +182,19 @@ class Executor:
 
         if is_new or is_hot:
             logging.info(
+                f'[Admission Control] DENIED: ' +
                 f'Most recent post on [{subreddit}] at [{last_posted_time}] ' +
-                f'within allowed reposting time window. ' +
+                f'satisfy min reposting delay {min_delay} hours. ' +
                 f'However, found earlier submission within top [{self.subreddit_frontpage_shreshold}] of ' +
-                f'{msg}'
+                f'[{msg}]'
             )
             return False
+
+        logging.info(
+            f'[Admission Control] ALLOWED: ' +
+            f'Most recent post on [{subreddit}] at [{last_posted_time}] ' +
+            f'satisfies min reposing period of {min_delay} hours. ' +
+            f'No earlier submission found in hot nor new listings.'
+        )
 
         return True

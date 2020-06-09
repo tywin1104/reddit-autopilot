@@ -76,8 +76,17 @@ class TaskService:
         }))
 
     def update(self, new_task):
-        id, rev = new_task.get('_id'), new_task.get('_rev')
-        return self.db.update_doc(id, rev, new_task)
+        # Each time the task got updated in couchdb
+        # a new _rev value will be set
+        # All we do for the app here is linear update with no concurrent updates
+        # So we can ensure it is safe to just grap the current _rev for this update
+        id = new_task.get("_id")
+        existing_task = self.get(id)[0]
+        previous_rev = existing_task['_rev']
+        # As we do not maggle with _rev at app level
+        # Need to set rev here for the new_task spec to points to its previous_rev
+        new_task['_rev'] = previous_rev
+        return self.db.update_doc(id, previous_rev, new_task)
 
 '''
 SubredditLastPosted db service deals with SubredditLastPosted related db operations
