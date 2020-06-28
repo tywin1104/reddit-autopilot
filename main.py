@@ -1,7 +1,9 @@
 import logging
 from reddit import Subreddit, RedditService
 from db import DbService
+from db.couchdb import CouchdbService
 from executor import Executor
+
 
 def configure_logging():
     logging.basicConfig(
@@ -24,21 +26,22 @@ for sub_name in subreddit_names:
 
 reddit = RedditService(subreddits)
 
-db = DbService({
-    "url": "",
-    "user": "",
-    "password": ""
-})
+couchdb_engine = CouchdbService(
+    url="",
+    user="",
+    password=""
+)
+db = DbService(couchdb_engine)
 
 if __name__ == "__main__":
     configure_logging()
     executor = Executor(
         reddit=reddit,
         db=db,
-        running_window=(8,24),
+        running_window=(8, 23),
         min_reposting_dalay=12,
-        max_reposing_delay=24,
+        max_reposting_delay=24,
         subreddit_frontpage_shreshold=10,
-        run_period=3600
+        run_interval_seconds=3600
     )
     executor.run()

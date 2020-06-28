@@ -1,109 +1,12 @@
-import time
 from datetime import datetime, timedelta
 import logging
+import time
 import traceback
 
 
 class Executor:
-    def __init__(
-        self, reddit, db,
-        running_window=(8,22),
-        min_reposting_dalay=12,
-        max_reposting_delay=24,
-        subreddit_frontpage_shreshold=10,
-        run_period=120
-    ):
-        self.reddit = reddit
-        self.db = db
-        # only allow postes to be made during running_window
-        self.running_window = running_window
-        self.min_reposting_dalay = min_reposting_dalay
-        self.max_reposting_delay = max_reposting_delay
-        self.subreddit_frontpage_shreshold = subreddit_frontpage_shreshold
-        self.run_period = run_period
-
-    def run(self):
-        while True:
-            if self.is_in_running_window():
-                logging.info("In running window. Starting processing tasks")
-                self.process_tasks()
-            else:
-                logging.info("Out of running window")
-
-            self.collect_stats()
-
-            # Run the cycle at time intervals
-            logging.info(f'This run cycle is over. Sleep {self.run_period // 60} minutes')
-            time.sleep(self.run_period)
-
-    def is_in_running_window(self):
-        hour = datetime.now().hour
-        start, end = self.running_window
-        return start <= hour <= end
-
-    def collect_stats(self):
-        logging.info("Collecting stats for existing submissions")
-        pass
-
-    def process_tasks(self):
-        uncompleted_tasks = self.db.task.get_uncompleted()
-        logging.info(f'Found total {len(uncompleted_tasks)} uncompleted tasks')
-        for task in uncompleted_tasks:
-            try:
-                self.process_task(task)
-            except Exception as e:
-                logging.error(f'Failed to process task {task["_id"]} : {e}')
-                traceback.print_exc()
-
-        logging.info(f'All tasks are processed for this round. Sleeping until next round')
-
-    def process_task(self, task):
-        logging.info(f'Start processing task [{task["_id"]}]')
-        subreddits = task.get('subreddits', [])
-        posted = False
-        for index, subreddit_block in enumerate(subreddits):
-            # Wait for some time to prevent reddit spamming detection
-            subreddit = subreddit_block['name']
-            logging.info(f'Staring: Task [{task["_id"]}] subreddit [{subreddit}]')
-            if posted:
-                print("\n")
-                time.sleep(60)
-                posted = False
-
-            if subreddit_block['posted']:
-                logging.info(f'Already posted. Skip')
-
-            if not subreddit_block['posted'] and self.should_post(task, subreddit):
-                # Only some subreddit_block will have flair_id set
-                flair_id = subreddit_block.get('flair_id', None)
-                self.post(task, index, subreddit, flair_id)
-                posted = True
-                logging.info(f'Task [{task["_id"]}] subreddit [{subreddit}] posted successfully')
-
-
-    def post(self, task, index, subreddit, flair_id):
-        if not task['titles']:
-            raise Exception("No available titles specified for this task")
-
-        title = task['titles'][index % len(task['titles'])]
-
-        # Make post to subreddit
-        post_url = self.reddit.post(subreddit, title, task['gif_link'], flair_id=flair_id)
-        logging.info(f'{post_url} posted successfully')
-
-        timestamp = time.time()
-        new_task = Executor.update_task(task, subreddit, post_url, timestamp)
-        # Update task in db
-        self.db.task.update(new_task)
-
-        # Update subreddit_last_posted record db
-        self.db.subreddit_record.upsert({
-            "_id": subreddit,
-            "lastPostedTimestamp": timestamp
-        })
-
     @staticmethod
-    def update_task(task, subreddit, post_url, timestamp):
+    def _update_task(task, subreddit, post_url, timestamp):
         # Update task document
         # update corresponding subreddit block in the task document
         subreddit_item = next(item for item in task['subreddits'] if item["name"] == subreddit)
@@ -126,33 +29,117 @@ class Executor:
         return task
 
     @staticmethod
-    def within_last_hours(timestamp, hours):
+    def _within_last_hours(timestamp, hours):
         now = datetime.now()
         return now-timedelta(hours=hours) <= timestamp
 
-    def should_post(self, task, subreddit):
-        now = datetime.now()
-        records = self.db.subreddit_record.get(subreddit)
+    def __init__(
+        self, reddit, db,
+        running_window=(8, 22),
+        min_reposting_dalay=12,
+        max_reposting_delay=24,
+        subreddit_frontpage_shreshold=10,
+        run_interval_seconds=3600
+    ):
+        self._reddit = reddit
+        self._db = db
+        # only allow postes to be made during running_window
+        self._running_window = running_window
+        self._min_reposting_dalay = min_reposting_dalay
+        self._max_reposting_delay = max_reposting_delay
+        self._subreddit_frontpage_shreshold = subreddit_frontpage_shreshold
+        self._run_interval_seconds = run_interval_seconds
+
+    def _is_in_running_window(self):
+        hour = datetime.now().hour
+        start, end = self._running_window
+        return start <= hour <= end
+
+    def _post(self, task, index, subreddit, flair_id):
+        '''
+        Post a new link submission to subreddit
+        (also reply to the new post with video source)
+        '''
+        if not task['titles']:
+            raise Exception("No available titles specified for this task")
+
+        title = task['titles'][index % len(task['titles'])]
+
+        # Make post to subreddit
+        _, post_url = self._reddit.post(subreddit, title, task['gif_link'], flair_id=flair_id)
+        logging.info(f'{post_url} posted successfully')
+
+        timestamp = time.time()
+        new_task = Executor._update_task(task, subreddit, post_url, timestamp)
+
+        # Reply the post with video source
+        # if task.get('video_link', None):
+        #     source_link_markdown = f'[Source]({task["video_link"]})'
+        #     submission.reply(source_link_markdown)
+
+        # Update task in db
+        self._db.task.update(new_task)
+
+        # Update subreddit_last_posted record db
+        self._db.subreddit_record.upsert(subreddit, {
+            "_id": subreddit,
+            "lastPostedTimestamp": timestamp
+        })
+
+    def _process_task(self, task):
+        logging.info(f'Start processing task [{task["_id"]}]')
+        subreddits = task.get('subreddits', [])
+        posted = False
+        for index, subreddit_block in enumerate(subreddits):
+            # Wait for some time to prevent reddit spamming detection
+            subreddit = subreddit_block['name']
+            logging.info(f'Staring: Task [{task["_id"]}] subreddit [{subreddit}]')
+            if posted:
+                print("\n")
+                time.sleep(60)
+                posted = False
+
+            if subreddit_block['posted']:
+                logging.info('Already posted. Skip')
+
+            if not subreddit_block['posted'] and self._should_post(task, subreddit):
+                # Only some subreddit_block will have flair_id set
+                flair_id = subreddit_block.get('flair_id', None)
+                self._post(task, index, subreddit, flair_id)
+                posted = True
+                logging.info(f'Task [{task["_id"]}] subreddit [{subreddit}] posted successfully')
+
+    def _process_tasks(self):
+        uncompleted_tasks = self._db.task.get_uncompleted()
+        logging.info(f'Found total {len(uncompleted_tasks)} uncompleted tasks')
+        for task in uncompleted_tasks:
+            try:
+                self._process_task(task)
+            except Exception as e:
+                logging.error(f'Failed to process task {task["_id"]} : {e}')
+                traceback.print_exc()
+
+    def _should_post(self, task, subreddit):
+        record = self._db.subreddit_record.get(subreddit)
         # first time posting on that subreddit, should allow
-        if not records:
+        if not record:
             logging.info(
-                f'[Admission Control] ALLOWED: ' +
+                '[Admission Control] ALLOWED: ' +
                 f'First time posting on [{subreddit}]'
             )
             return True
 
-        record = records[0]
         last_posted_time = datetime.fromtimestamp(record['lastPostedTimestamp'])
 
         # Do not repost to the same subreddit within the min thereshold period
         # this is in place to prevent spamming the subreddits
-        min_delay = self.min_reposting_dalay
-        if self.reddit.is_low_volume(subreddit):
+        min_delay = self._min_reposting_dalay
+        if self._reddit.is_low_volume(subreddit):
             min_delay *= 2
 
-        if Executor.within_last_hours(last_posted_time, min_delay):
+        if Executor._within_last_hours(last_posted_time, min_delay):
             logging.info(
-                f'[Admission Control] DENIED: ' +
+                '[Admission Control] DENIED: ' +
                 f'Most recent post on [{subreddit}] at [{last_posted_time}] ' +
                 f'does not satisfy min reposting delay {min_delay} hours'
             )
@@ -160,12 +147,12 @@ class Executor:
 
         # If a post has not been made to a subreddit more than max threshold
         # allow to post it
-        max_delay = self.max_reposting_delay
-        if self.reddit.is_low_volume(subreddit):
+        max_delay = self._max_reposting_delay
+        if self._reddit.is_low_volume(subreddit):
             max_delay *= 2
-        if not Executor.within_last_hours(last_posted_time, max_delay):
+        if not Executor._within_last_hours(last_posted_time, max_delay):
             logging.info(
-                f'[Admission Control] ALLOWED: ' +
+                '[Admission Control] ALLOWED: ' +
                 f'Most recent post on [{subreddit}] at [{last_posted_time}] ' +
                 f'exceeds max reposting delay {max_delay} hours. '
             )
@@ -173,8 +160,8 @@ class Executor:
 
         # If any earlier submission is on the frontpage of that subreddit
         # delay new submission and check next round
-        is_new = self.reddit.is_on_frontpage(subreddit, "new", threshold=self.subreddit_frontpage_shreshold)
-        is_hot = self.reddit.is_on_frontpage(subreddit, "hot", threshold=self.subreddit_frontpage_shreshold)
+        is_new = self._reddit.is_on_frontpage(subreddit, "new", threshold=self._subreddit_frontpage_shreshold)
+        is_hot = self._reddit.is_on_frontpage(subreddit, "hot", threshold=self._subreddit_frontpage_shreshold)
         if is_new:
             msg = "new listings"
         if is_hot:
@@ -182,7 +169,7 @@ class Executor:
 
         if is_new or is_hot:
             logging.info(
-                f'[Admission Control] DENIED: ' +
+                '[Admission Control] DENIED: ' +
                 f'Most recent post on [{subreddit}] at [{last_posted_time}] ' +
                 f'satisfy min reposting delay {min_delay} hours. ' +
                 f'However, found earlier submission within top [{self.subreddit_frontpage_shreshold}] of ' +
@@ -191,10 +178,22 @@ class Executor:
             return False
 
         logging.info(
-            f'[Admission Control] ALLOWED: ' +
+            '[Admission Control] ALLOWED: ' +
             f'Most recent post on [{subreddit}] at [{last_posted_time}] ' +
             f'satisfies min reposing period of {min_delay} hours. ' +
-            f'No earlier submission found in hot nor new listings.'
+            'No earlier submission found in hot nor new listings.'
         )
 
         return True
+
+    def run(self):
+        while True:
+            if self._is_in_running_window():
+                logging.info("In running window. Starting processing tasks")
+                self._process_tasks()
+            else:
+                logging.info("Out of running window. Sleep.")
+
+            # Run the cycle at time intervals
+            logging.info(f'This run cycle is over. Sleep {self._run_interval_seconds // 60} minutes')
+            time.sleep(self._run_interval_seconds)

@@ -1,16 +1,13 @@
-from .couchdb import CouchdbService
-
-
 class DbService:
-    def __init__(self, db_options):
-        url, user, password = db_options.values()
+    def __init__(self, db_engine):
+        self._db_engine = db_engine
 
-        self.task = TaskService(
-            CouchdbService(url, user, password, "tasks")
+        self.task = TaskDbService(
+            self._db_engine.db("tasks")
         )
 
-        self.subreddit_record =  SubredditLastPostedService(
-            CouchdbService(url, user, password, "subreddits")
+        self.subreddit_record = SubredditLastPostedDbService(
+            self._db_engine.db("subreddits")
         )
 
 
@@ -58,7 +55,9 @@ Task should be in the shape of
     ]
 }
 '''
-class TaskService:
+
+
+class TaskDbService:
     def __init__(self, db):
         self.db = db
 
@@ -66,27 +65,16 @@ class TaskService:
         return self.db.create_doc(id, task)
 
     def get(self, id):
-        return self.db.get_docs(_selector({
-            "_id" : id
-        }))
+        return self.get_doc_by_id(id)
 
     def get_uncompleted(self):
-        return self.db.get_docs(_selector({
+        return self.db.get_docs({
             "completed": False
-        }))
+        })
 
     def update(self, new_task):
-        # Each time the task got updated in couchdb
-        # a new _rev value will be set
-        # All we do for the app here is linear update with no concurrent updates
-        # So we can ensure it is safe to just grap the current _rev for this update
-        id = new_task.get("_id")
-        existing_task = self.get(id)[0]
-        previous_rev = existing_task['_rev']
-        # As we do not maggle with _rev at app level
-        # Need to set rev here for the new_task spec to points to its previous_rev
-        new_task['_rev'] = previous_rev
-        return self.db.update_doc(id, previous_rev, new_task)
+        self.db.update_doc(new_task)
+
 
 '''
 SubredditLastPosted db service deals with SubredditLastPosted related db operations
@@ -96,35 +84,15 @@ record should be in the shape of
     "lastPostedTimestamp": linux-timestamp-num
 }
 '''
-class SubredditLastPostedService:
+
+
+class SubredditLastPostedDbService:
     def __init__(self, db):
         self.db = db
 
-    def upsert(self, new_record):
-        id = new_record['_id']
-        existing_records = self.db.get_docs(_selector({
-            "_id": id
-        }))
-
-        # First time posted in this subreddit
-        # Create associated record
-        if not existing_records:
-            self.db.create_doc(id, new_record)
-        else:
-            existing_record = existing_records[0]
-            self.db.update_doc(
-                existing_record['_id'],
-                existing_record['_rev'],
-                new_record
-            )
-
     def get(self, id):
-        return self.db.get_docs(_selector({
-            "_id" : id
-        }))
+        return self.db.get_doc_by_id(id)
 
+    def upsert(self, id, new_record):
+        self.db.upsert_doc(id, new_record)
 
-def _selector(body):
-    return {
-        "selector": body
-    }
