@@ -13,12 +13,12 @@ class DbService:
 
 '''
 Task db service deals with task related db operations
-
 Task should be in the shape of
 
 {
     "_id": "123",
-    "gif_link": "https://gfycat.com/faintsnivelinggroundhog-tippy-taps-cute-aww",
+    "gif_link": "https://gfycat.com/faintsnivelinggroundhog-tippy-taps-cute-aww"
+    "link": "https://redditpost",
     "video_link": "https://videos.com/videos?1212891",
     "completed": false,
     "last_posted_timestamp": 1291298130,
@@ -45,13 +45,6 @@ Task should be in the shape of
             "link": "https://www.reddit.com/r/TheoryOfReddit/comments/b45qro/best_times_to_post_on_reddit/",
             "timestamp": 1291298130
         }
-    ],
-    "titles": [
-        "this is a fake title 1",
-        "this is a fake title 2",
-        "this is a fake title 3",
-        "this is a fake title 4",
-        "this is a fake title 5"
     ]
 }
 '''
@@ -95,4 +88,3 @@ class SubredditLastPostedDbService:
 
     def upsert(self, id, new_record):
         self.db.upsert_doc(id, new_record)
-

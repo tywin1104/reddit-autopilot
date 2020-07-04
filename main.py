@@ -1,35 +1,25 @@
+import coloredlogs
 import logging
-from reddit import Subreddit, RedditService
+from reddit import RedditService
 from db import DbService
 from db.couchdb import CouchdbService
 from executor import Executor
 
 
 def configure_logging():
-    logging.basicConfig(
-        format='%(asctime)s - %(message)s',
-        datefmt='%d-%b-%y %H:%M:%S',
-        level=logging.INFO)
+    coloredlogs.install(
+        level='INFO',
+        fmt='%(asctime)s, %(levelname)s %(message)s',
+        logger=logging.getLogger()
+    )
 
 
-with open('subreddits') as f:
-    subreddit_names = [line.rstrip() for line in f]
-
-subreddits = []
-for sub_name in subreddit_names:
-    # use * at start to indicate low_volume
-    if sub_name[0] == "*":
-        subreddits.append(Subreddit(sub_name[1:], low_volume=True))
-    else:
-        subreddits.append(Subreddit(sub_name))
-
-
-reddit = RedditService(subreddits)
+reddit = RedditService()
 
 couchdb_engine = CouchdbService(
-    url="",
-    user="",
-    password=""
+    url="http://127.0.0.1:5984",
+    user="***REMOVED***",
+    password="412476can"
 )
 db = DbService(couchdb_engine)
 

@@ -2,9 +2,16 @@ from datetime import datetime, timedelta
 import logging
 import time
 import traceback
+import praw
 
 
 class Executor:
+
+    @staticmethod
+    def _is_crosspost_forbidden_error(error):
+        reddit_api_crosspost_forbidden_errors = ["NO_CROSSPOSTS", "OVER18_SUBREDDIT_CROSSPOST"]
+        return error.error_type in reddit_api_crosspost_forbidden_errors
+
     @staticmethod
     def _update_task(task, subreddit, post_url, timestamp):
         # Update task document
@@ -50,54 +57,52 @@ class Executor:
         self._subreddit_frontpage_shreshold = subreddit_frontpage_shreshold
         self._run_interval_seconds = run_interval_seconds
 
+    def _crosspost(self, task, subreddit, flair_id):
+        '''
+        Crosspost existing reddit submission to other subs
+        '''
+        existing_submission_link = task['link']
+        _, post_url = self._reddit.crosspost(subreddit, existing_submission_link, flair_id=flair_id)
+        logging.info(f'{post_url} crossposted successfully')
+
+        return post_url
+
     def _is_in_running_window(self):
         hour = datetime.now().hour
         start, end = self._running_window
         return start <= hour <= end
 
-    def _post(self, task, index, subreddit, flair_id):
+    def _post_direct(self, task, subreddit, flair_id):
         '''
         Post a new link submission to subreddit
         (also reply to the new post with video source)
         '''
-        if not task['titles']:
-            raise Exception("No available titles specified for this task")
+        gif_link = task['gif_link']
+        if "***REMOVED***" not in gif_link:
+            raise ValueError("Direct post invalid gif link")
 
-        title = task['titles'][index % len(task['titles'])]
+        # use the same title as used in existing_submission
+        existing_submission_link = task['link']
+        title = self._reddit.get_post_title(existing_submission_link)
 
-        # Make post to subreddit
-        _, post_url = self._reddit.post(subreddit, title, task['gif_link'], flair_id=flair_id)
+        submission, post_url = self._reddit.post(subreddit, title, gif_link, flair_id=flair_id)
         logging.info(f'{post_url} posted successfully')
 
-        timestamp = time.time()
-        new_task = Executor._update_task(task, subreddit, post_url, timestamp)
-
         # Reply the post with video source
-        # if task.get('video_link', None):
-        #     source_link_markdown = f'[Source]({task["video_link"]})'
-        #     submission.reply(source_link_markdown)
+        if task.get('video_link', None):
+            self._reddit.reply(submission, task['video_link'])
 
-        # Update task in db
-        self._db.task.update(new_task)
-
-        # Update subreddit_last_posted record db
-        self._db.subreddit_record.upsert(subreddit, {
-            "_id": subreddit,
-            "lastPostedTimestamp": timestamp
-        })
+        return post_url
 
     def _process_task(self, task):
         logging.info(f'Start processing task [{task["_id"]}]')
         subreddits = task.get('subreddits', [])
-        posted = False
-        for index, subreddit_block in enumerate(subreddits):
+        for _, subreddit_block in enumerate(subreddits):
+            posted = False
+
             # Wait for some time to prevent reddit spamming detection
             subreddit = subreddit_block['name']
-            logging.info(f'Staring: Task [{task["_id"]}] subreddit [{subreddit}]')
-            if posted:
-                print("\n")
-                time.sleep(60)
-                posted = False
+            logging.info(f'Starting: Task [{task["_id"]}] subreddit [{subreddit}]')
 
             if subreddit_block['posted']:
                 logging.info('Already posted. Skip')
@@ -105,19 +110,40 @@ class Executor:
             if not subreddit_block['posted'] and self._should_post(task, subreddit):
                 # Only some subreddit_block will have flair_id set
                 flair_id = subreddit_block.get('flair_id', None)
-                self._post(task, index, subreddit, flair_id)
-                posted = True
-                logging.info(f'Task [{task["_id"]}] subreddit [{subreddit}] posted successfully')
+                try:
+                    post_url = self._crosspost(task, subreddit, flair_id)
+                    posted = True
+                except praw.exceptions.RedditAPIException as api_exception:
+                    # Try crosspost first, if fails due to subreddit rules, submit direct post
+                    if Executor._is_crosspost_forbidden_error(api_exception):
+                        logging.warning(f'Crosspost not allowed on subreddit [{subreddit}], will make a direct post')
+                        try:
+                            post_url = self._post_direct(task, subreddit, flair_id)
+                            posted = True
+                        except praw.exceptions.RedditAPIException as api_exception:
+                            logging.error(f'Failed to process task [{task["_id"]}] on subreddit [{subreddit}] due to RedditAPI error: {api_exception}')
+                        except Exception as e:
+                            logging.error(f'Failed to process task [{task["_id"]}] on subreddit [{subreddit}]: {e}')
+                            traceback.print_exc()
+                    else:
+                        logging.error(
+                            f'Failed to process task [{task["_id"]}] on subreddit [{subreddit}] due to RedditAPI error: {api_exception}'
+                        )
+                except Exception as e:
+                    logging.error(f'Failed to process task [{task["_id"]}] on subreddit [{subreddit}]: {e}')
+                    traceback.print_exc()
+                finally:
+                    if posted:
+                        # Either crosspost or direct post is made, update db records
+                        self._update_records(task, subreddit, post_url)
+                        time.sleep(60)
+                    continue
 
     def _process_tasks(self):
         uncompleted_tasks = self._db.task.get_uncompleted()
         logging.info(f'Found total {len(uncompleted_tasks)} uncompleted tasks')
         for task in uncompleted_tasks:
-            try:
-                self._process_task(task)
-            except Exception as e:
-                logging.error(f'Failed to process task {task["_id"]} : {e}')
-                traceback.print_exc()
+            self._process_task(task)
 
     def _should_post(self, task, subreddit):
         record = self._db.subreddit_record.get(subreddit)
@@ -134,8 +160,6 @@ class Executor:
         # Do not repost to the same subreddit within the min thereshold period
         # this is in place to prevent spamming the subreddits
         min_delay = self._min_reposting_dalay
-        if self._reddit.is_low_volume(subreddit):
-            min_delay *= 2
 
         if Executor._within_last_hours(last_posted_time, min_delay):
             logging.info(
@@ -148,8 +172,6 @@ class Executor:
         # If a post has not been made to a subreddit more than max threshold
         # allow to post it
         max_delay = self._max_reposting_delay
-        if self._reddit.is_low_volume(subreddit):
-            max_delay *= 2
         if not Executor._within_last_hours(last_posted_time, max_delay):
             logging.info(
                 '[Admission Control] ALLOWED: ' +
@@ -172,7 +194,7 @@ class Executor:
                 '[Admission Control] DENIED: ' +
                 f'Most recent post on [{subreddit}] at [{last_posted_time}] ' +
                 f'satisfy min reposting delay {min_delay} hours. ' +
-                f'However, found earlier submission within top [{self.subreddit_frontpage_shreshold}] of ' +
+                f'However, found earlier submission within top [{self._subreddit_frontpage_shreshold}] of ' +
                 f'[{msg}]'
             )
             return False
@@ -185,6 +207,19 @@ class Executor:
         )
 
         return True
+
+    def _update_records(self, task, subreddit, submission_url):
+        timestamp = time.time()
+        new_task = Executor._update_task(task, subreddit, submission_url, timestamp)
+
+        # Update task in db
+        self._db.task.update(new_task)
+
+        # Update subreddit_last_posted record db
+        self._db.subreddit_record.upsert(subreddit, {
+            "_id": subreddit,
+            "lastPostedTimestamp": timestamp
+        })
 
     def run(self):
         while True:
