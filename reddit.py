@@ -1,9 +1,8 @@
 import functools
 import logging
-import time
 import re
 import praw
-import progressbar
+from utils import sleep_with_progess
 
 
 def _handle_ratelimit(function):
@@ -21,9 +20,8 @@ def _handle_ratelimit(function):
                 if match:
                     mins = int(match.group())
                     logging.warning(f'Reddit API ratelimit reached: wait {mins} minutes')
-                    sleep_secs = 60 * mins + 10
-                    for i in progressbar.progressbar(range(100)):
-                        time.sleep(sleep_secs / 100)
+                    sleep_secs = 60 * (mins + 1) + 10
+                    sleep_with_progess(sleep_secs)
 
                     return function(*args, **kwargs)
             else:

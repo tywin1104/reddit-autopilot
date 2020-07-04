@@ -3,6 +3,7 @@ import logging
 import time
 import traceback
 import praw
+from utils import sleep_with_progess
 
 
 class Executor:
@@ -89,8 +90,8 @@ class Executor:
         logging.info(f'{post_url} posted successfully')
 
         # Reply the post with video source
-        if task.get('video_link', None):
-            self._reddit.reply(submission, task['video_link'])
+        # if task.get('video_link', None):
+        #     self._reddit.reply(submission, task['video_link'])
 
         return post_url
 
@@ -136,7 +137,7 @@ class Executor:
                     if posted:
                         # Either crosspost or direct post is made, update db records
                         self._update_records(task, subreddit, post_url)
-                        time.sleep(60)
+                        sleep_with_progess(60)
                     continue
 
     def _process_tasks(self):
@@ -231,4 +232,4 @@ class Executor:
 
             # Run the cycle at time intervals
             logging.info(f'This run cycle is over. Sleep {self._run_interval_seconds // 60} minutes')
-            time.sleep(self._run_interval_seconds)
+            sleep_with_progess(self._run_interval_seconds)
