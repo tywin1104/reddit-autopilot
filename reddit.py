@@ -91,7 +91,6 @@ class RedditService:
 
         return (submission, reddit_base_url + submission.permalink)
 
-    @_handle_ratelimit
     def reply(self, submission, video_link):
         source_link_markdown = f'[Source]({video_link})'
         submission.reply(source_link_markdown)

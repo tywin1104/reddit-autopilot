@@ -3,6 +3,7 @@ import logging
 import time
 import traceback
 import praw
+from tasks import schedule_reply
 from utils import sleep_with_progess
 
 
@@ -89,9 +90,10 @@ class Executor:
         submission, post_url = self._reddit.post(subreddit, title, gif_link, flair_id=flair_id)
         logging.info(f'{post_url} posted successfully')
 
-        # Reply the post with video source
-        # if task.get('video_link', None):
-        #     self._reddit.reply(submission, task['video_link'])
+        # Schedule task to reply the post with video source
+        if task.get('video_link', None):
+            schedule_reply(submission, task['video_link'])
+            logging.info('Reply task scheduled')
 
         return post_url
 

@@ -10,6 +10,7 @@ praw = "*"
 requests = "*"
 coloredlogs = "*"
 progressbar2 = "*"
+huey = "*"
 
 [requires]
 python_version = "3.8"

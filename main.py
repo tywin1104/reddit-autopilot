@@ -1,9 +1,11 @@
-import coloredlogs
 import logging
 from reddit import RedditService
 from db import DbService
 from db.couchdb import CouchdbService
 from executor import Executor
+import coloredlogs
+from config import huey
+from tasks import schedule_reply
 
 
 def configure_logging():
@@ -19,12 +21,13 @@ reddit = RedditService()
 couchdb_engine = CouchdbService(
     url="http://127.0.0.1:5984",
     user="***REMOVED***",
-    password="412476can"
+    password=""
 )
 db = DbService(couchdb_engine)
 
 if __name__ == "__main__":
     configure_logging()
+
     executor = Executor(
         reddit=reddit,
         db=db,
