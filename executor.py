@@ -49,7 +49,6 @@ class Executor:
         max_reposting_delay=24,
         subreddit_frontpage_shreshold=10,
         run_interval_seconds=3600,
-        crosspost=True,
         nsfw=False
     ):
         self._reddit = reddit
@@ -60,7 +59,6 @@ class Executor:
         self._max_reposting_delay = max_reposting_delay
         self._subreddit_frontpage_shreshold = subreddit_frontpage_shreshold
         self._run_interval_seconds = run_interval_seconds
-        self._crosspost_enabled = crosspost
         self._nsfw = nsfw
 
     def _crosspost(self, task, subreddit, flair_id):
@@ -75,6 +73,20 @@ class Executor:
         logging.info(f'{post_url} crossposted successfully')
 
         return post_url
+
+    def _get_operations(self, task):
+        '''
+        Get desired operation modes from the given task
+        This allows individual task to define the desired post types
+        '''
+        link, crosspost_link = task.get('link', None), task.get('crosspost_source_link', None)
+        operations = []
+        if crosspost_link:
+            operations.append(self._crosspost)
+        if link:
+            operations.append(self._post_direct)
+        if not operations:
+            raise ValueError('Invalid task document. Neither crosspost target nor direct link found')
 
     def _is_in_running_window(self):
         hour = datetime.now().hour
@@ -131,11 +143,9 @@ class Executor:
                 logging.info('Already posted. Skip')
 
             if not subreddit_block['posted'] and self._should_post(subreddit):
-                # If crosspost option is enabled, use crosspost first
-                # Otherwise only attempts to make direct post submissions
-                operations = [self._crosspost, self._post_direct]
-                if not self._crosspost_enabled:
-                    operations = [self._post_direct]
+                # Get the mode of opeartions from the task document
+                # This allows flexible mode defined per task
+                operations = self._get_operations(task)
 
                 # Only some subreddit_block will have flair_id set
                 # as it is not a mandtory requirement of most subreddits

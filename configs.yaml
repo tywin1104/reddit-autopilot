@@ -23,9 +23,5 @@ app:
     # time in seconds for the app to run for each round
     # at each round it will attemps to complete all uncompleted tasks
     run_interval_seconds: 3600
-    # Currently supports two operation modes
-    # 1) crosspost + direct_link_post (fallback)  deafult(when this option is set to true)
-    # 2) direct_link_post only (set this option to false)
-    crosspost: true
     # If the submission content is catagoried as NSFW
     nsfw: true
