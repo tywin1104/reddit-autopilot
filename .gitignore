@@ -2,3 +2,6 @@
 subreddits
 .vscode/
 *.pyc
+huey*
+htmls/
+scripts/

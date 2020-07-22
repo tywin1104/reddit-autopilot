@@ -47,7 +47,7 @@ class CouchdbService:
             message = err_msg + "\n" + json.get('error', "") + " : " + json.get('reason', "")
             raise DbOperationException(message)
 
-    def _create_db(self, db_name):
+    def _create_db(self):
         r = self._call_api(f'/{self._db_name}', verb='PUT')
         self._check_error(
             r,
@@ -57,7 +57,7 @@ class CouchdbService:
     def _setup(self):
         r = self._call_api(f'/{self._db_name}')
         if r.status_code == requests.codes.not_found:
-            self._create_db(self._db_name)
+            self._create_db()
 
     def create_doc(self, id, doc):
         r = self._call_api(f'/{self._db_name}/{id}', verb='PUT', data=doc)

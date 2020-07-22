@@ -11,6 +11,7 @@ requests = "*"
 coloredlogs = "*"
 progressbar2 = "*"
 huey = "*"
+pyyaml = "*"
 
 [requires]
 python_version = "3.8"

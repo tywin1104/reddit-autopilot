@@ -13,37 +13,22 @@ class DbService:
 
 '''
 Task db service deals with task related db operations
-Task should be in the shape of
+Task document should be in the shape of
 
 {
     "_id": "123",
-    "gif_link": "https://gfycat.com/faintsnivelinggroundhog-tippy-taps-cute-aww"
-    "link": "https://redditpost",
-    "video_link": "https://videos.com/videos?1212891",
+    "link": "https://link"
+    "crosspost_source_link": "https://www.reddit.com/r/example/comments/hvcqse/example/",
+    "reply_content": "content to reply to the newly made posts. Markdown format",
     "completed": false,
-    "last_posted_timestamp": 1291298130,
-    "total_karmas": 123,
-    "last_updated_timestamp": 1291298130,
     "subreddits": [
         {
-            "name": "subreddit1",
-            "posted": True,
-            "link": "https://www.reddit.com/r/TheoryOfReddit/comments/b45qro/best_times_to_post_on_reddit/",
-            "timestamp": 1291298127
-        },
-        {
             "name": "subreddit2",
-            "posted": true
+            "posted": false
         },
         {
             "name": "subreddit3",
             "posted": false,
-        },
-        {
-            "name": "subreddit4",
-            "posted": false,
-            "link": "https://www.reddit.com/r/TheoryOfReddit/comments/b45qro/best_times_to_post_on_reddit/",
-            "timestamp": 1291298130
         }
     ]
 }
@@ -58,7 +43,7 @@ class TaskDbService:
         return self.db.create_doc(id, task)
 
     def get(self, id):
-        return self.get_doc_by_id(id)
+        return self.db.get_doc_by_id(id)
 
     def get_uncompleted(self):
         return self.db.get_docs({
@@ -70,8 +55,8 @@ class TaskDbService:
 
 
 '''
-SubredditLastPosted db service deals with SubredditLastPosted related db operations
-record should be in the shape of
+SubredditLastPosted db service keep track of posts being made to various subreddits
+record document should be in the shape of
 {
     "_id": "subredditname",
     "lastPostedTimestamp": linux-timestamp-num

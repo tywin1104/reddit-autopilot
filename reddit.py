@@ -36,7 +36,7 @@ class RedditService:
         self._username = self._reddit.user.me().name
 
     @_handle_ratelimit
-    def crosspost(self, subreddit, existing_submission_link, flair_id=None):
+    def crosspost(self, subreddit, existing_submission_link, flair_id=None, nsfw=False):
         '''
         Crosspost a submission to target subreddit
         :returns: the full url for the submission if successful
@@ -47,7 +47,7 @@ class RedditService:
         crosspost_submission = existing_submission.crosspost(
             subreddit=subreddit,
             send_replies=True,
-            nsfw=True,
+            nsfw=nsfw,
             flair_id=flair_id
         )
 
@@ -75,7 +75,7 @@ class RedditService:
         return False
 
     @_handle_ratelimit
-    def post(self, subreddit, title, link, flair_id=None):
+    def post(self, subreddit, title, link, flair_id=None, nsfw=False):
         '''
         Post a link to the target subreddit with specified title
         :returns: the full url for the submission if successful
@@ -85,13 +85,12 @@ class RedditService:
         submission = self._reddit.subreddit(subreddit).submit(
             title,
             url=link,
-            nsfw=True,
+            nsfw=nsfw,
             flair_id=flair_id
         )
 
         return (submission, reddit_base_url + submission.permalink)
 
-    def reply(self, submission, video_link):
-        source_link_markdown = f'[Source]({video_link})'
-        submission.reply(source_link_markdown)
+    def reply(self, submission, reply_content):
+        submission.reply(reply_content)
         logging.info("commented successfully")

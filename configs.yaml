@@ -1,0 +1,14 @@
+couchdb:
+    host: ""
+    username: ""
+    password: ""
+
+app:
+    running_window_start_hour: 9
+    running_window_end_hour: 23
+    min_reposting_delay: 12
+    max_reposting_delay: 24
+    subreddit_frontpage_shreshold: 10
+    run_interval_seconds: 3600
+    crosspost: true
+    nsfw: false

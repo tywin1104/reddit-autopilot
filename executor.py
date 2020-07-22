@@ -48,7 +48,9 @@ class Executor:
         min_reposting_dalay=12,
         max_reposting_delay=24,
         subreddit_frontpage_shreshold=10,
-        run_interval_seconds=3600
+        run_interval_seconds=3600,
+        crosspost=True,
+        nsfw=False
     ):
         self._reddit = reddit
         self._db = db
@@ -58,13 +60,15 @@ class Executor:
         self._max_reposting_delay = max_reposting_delay
         self._subreddit_frontpage_shreshold = subreddit_frontpage_shreshold
         self._run_interval_seconds = run_interval_seconds
+        self._crosspost = crosspost
+        self._nsfw = nsfw
 
     def _crosspost(self, task, subreddit, flair_id):
         '''
         Crosspost existing reddit submission to other subs
         '''
-        existing_submission_link = task['link']
-        _, post_url = self._reddit.crosspost(subreddit, existing_submission_link, flair_id=flair_id)
+        crosspost_source_link = task['link']
+        _, post_url = self._reddit.crosspost(subreddit, crosspost_source_link, flair_id=flair_id, nsfw=self._nsfw)
         logging.info(f'{post_url} crossposted successfully')
 
         return post_url
@@ -77,22 +81,36 @@ class Executor:
     def _post_direct(self, task, subreddit, flair_id):
         '''
         Post a new link submission to subreddit
-        (also reply to the new post with video source)
+        Use same title as the crosspost target if it exists
+        or use title field specified in the task document
+        (could optionally schedule automatic reply to the newly created posts)
         '''
-        gif_link = task['gif_link']
-        if "***REMOVED***" not in gif_link:
-            raise ValueError("Direct post invalid gif link")
+        link = task.get('link', None)
+        if not link:
+            return ValueError('No link found within the task document to perform direct post. Skip this subreddit')
 
         # use the same title as used in existing_submission
-        existing_submission_link = task['link']
-        title = self._reddit.get_post_title(existing_submission_link)
+        crosspost_source_link = task.get('crosspost_source_link', None)
+        if crosspost_source_link:
+            if "reddit.com" not in crosspost_source_link:
+                raise ValueError(f'Invalid crosspost target: {crosspost_source_link} not a proper reddit submission')
 
-        submission, post_url = self._reddit.post(subreddit, title, gif_link, flair_id=flair_id)
+            title = self._reddit.get_post_title(crosspost_source_link)
+        else:
+            title = task.get('title', None)
+
+        if not title:
+            raise ValueError(
+                'Invalid task: unable to determine title for new submission.' +
+                'Either crosspost target or title field should be nonempty.'
+            )
+
+        submission, post_url = self._reddit.post(subreddit, title, link, flair_id=flair_id, nsfw=self._nsfw)
         logging.info(f'{post_url} posted successfully')
 
-        # Schedule task to reply the post with video source
-        if task.get('video_link', None):
-            schedule_reply(submission, task['video_link'])
+        # Schedule async jobs to reply the post
+        if task.get('reply_link', None):
+            schedule_reply(submission, task['reply_link'])
             logging.info('Reply task scheduled')
 
         return post_url
@@ -103,44 +121,45 @@ class Executor:
         for _, subreddit_block in enumerate(subreddits):
             posted = False
 
-            # Wait for some time to prevent reddit spamming detection
             subreddit = subreddit_block['name']
             logging.info(f'Starting: Task [{task["_id"]}] subreddit [{subreddit}]')
 
             if subreddit_block['posted']:
                 logging.info('Already posted. Skip')
 
-            if not subreddit_block['posted'] and self._should_post(task, subreddit):
+            if not subreddit_block['posted'] and self._should_post(subreddit):
+                # If crosspost option is enabled, use crosspost first
+                # Otherwise only attempts to make direct post submissions
+                operations = [self._crosspost, self._post_direct]
+                if not self._crosspost:
+                    operations = [self._post_direct]
+
                 # Only some subreddit_block will have flair_id set
+                # as it is not a mandtory requirement of most subreddits
                 flair_id = subreddit_block.get('flair_id', None)
-                try:
-                    post_url = self._crosspost(task, subreddit, flair_id)
-                    posted = True
-                except praw.exceptions.RedditAPIException as api_exception:
-                    # Try crosspost first, if fails due to subreddit rules, submit direct post
-                    if Executor._is_crosspost_forbidden_error(api_exception):
-                        logging.warning(f'Crosspost not allowed on subreddit [{subreddit}], will make a direct post')
-                        try:
-                            post_url = self._post_direct(task, subreddit, flair_id)
-                            posted = True
-                        except praw.exceptions.RedditAPIException as api_exception:
-                            logging.error(f'Failed to process task [{task["_id"]}] on subreddit [{subreddit}] due to RedditAPI error: {api_exception}')
-                        except Exception as e:
-                            logging.error(f'Failed to process task [{task["_id"]}] on subreddit [{subreddit}]: {e}')
-                            traceback.print_exc()
-                    else:
-                        logging.error(
-                            f'Failed to process task [{task["_id"]}] on subreddit [{subreddit}] due to RedditAPI error: {api_exception}'
-                        )
-                except Exception as e:
-                    logging.error(f'Failed to process task [{task["_id"]}] on subreddit [{subreddit}]: {e}')
-                    traceback.print_exc()
-                finally:
-                    if posted:
-                        # Either crosspost or direct post is made, update db records
-                        self._update_records(task, subreddit, post_url)
-                        sleep_with_progess(60)
-                    continue
+
+                for op_func in operations:
+                    try:
+                        post_url = op_func(task, subreddit, flair_id)
+                        posted = True
+                    except praw.exceptions.RedditAPIException as api_exception:
+                        if Executor._is_crosspost_forbidden_error(api_exception):
+                            logging.warning(f'Crosspost not allowed on subreddit [{subreddit}], will make a direct post')
+                            continue
+                        else:
+                            logging.error(
+                                f'Failed to process task [{task["_id"]}] on subreddit [{subreddit}] due to RedditAPI error: {api_exception}'
+                            )
+                    except Exception as e:
+                        logging.error(f'Failed to process task [{task["_id"]}] on subreddit [{subreddit}]: {e}')
+                        traceback.print_exc()
+                    finally:
+                        if posted:
+                            # Either crosspost or direct post is made, update db records
+                            self._update_records(task, subreddit, post_url)
+                            # short period of sleep to prevent spamming per reddit's policy
+                            sleep_with_progess(60)
+                        break
 
     def _process_tasks(self):
         uncompleted_tasks = self._db.task.get_uncompleted()
@@ -148,7 +167,7 @@ class Executor:
         for task in uncompleted_tasks:
             self._process_task(task)
 
-    def _should_post(self, task, subreddit):
+    def _should_post(self, subreddit):
         record = self._db.subreddit_record.get(subreddit)
         # first time posting on that subreddit, should allow
         if not record:
@@ -172,8 +191,8 @@ class Executor:
             )
             return False
 
-        # If a post has not been made to a subreddit more than max threshold
-        # allow to post it
+        # If no post has been made to a subreddit more than max threshold period
+        # allow to post
         max_delay = self._max_reposting_delay
         if not Executor._within_last_hours(last_posted_time, max_delay):
             logging.info(
@@ -184,7 +203,7 @@ class Executor:
             return True
 
         # If any earlier submission is on the frontpage of that subreddit
-        # delay new submission and check next round
+        # delay new submission for this round
         is_new = self._reddit.is_on_frontpage(subreddit, "new", threshold=self._subreddit_frontpage_shreshold)
         is_hot = self._reddit.is_on_frontpage(subreddit, "hot", threshold=self._subreddit_frontpage_shreshold)
         if is_new:
@@ -230,7 +249,7 @@ class Executor:
                 logging.info("In running window. Starting processing tasks")
                 self._process_tasks()
             else:
-                logging.info("Out of running window. Sleep.")
+                logging.info("Out of running window.")
 
             # Run the cycle at time intervals
             logging.info(f'This run cycle is over. Sleep {self._run_interval_seconds // 60} minutes')
