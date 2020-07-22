@@ -34,9 +34,12 @@ Configure, Run, and Autopilot!
 ## Get Started
 
 > Requirements to start the app locally:
-Python (version 3.7+), 
-Apache CouchDB (See https://couchdb.apache.org/ for setup instructions)
-Reddit Developer API Credentials (https://ssl.reddit.com/prefs/apps/)
+
+> Python (version 3.7+), 
+
+> Apache CouchDB (See https://couchdb.apache.org/ for setup instructions)
+
+> Reddit Developer API Credentials (https://ssl.reddit.com/prefs/apps/)
 
   
   After obtaining required dependencies and cloned the repo, follow the steps to get started
@@ -96,17 +99,20 @@ In general, the task JSON document should have the below format:
     ]
 }
 ```
-**Note**: 
+
 `link` -> URL for the link to be posted
+
 `crosspost_source_link` -> A reddit post that serves as the source of crosspost.
+
 `reply_content` -> Markdown format for the reply content
+
 These three fields above determins the mode of opeartions to post for this task.
 
 
 > when both `crosspost_source_link` and `link` are set, the app will attempt to crosspost from the source and if fails, will direct post the link as fallback.
 If only `crosspost_source_link` or `link` is specified, the app will only attempt the desired opeartion. 
 
-`subreddits` -> 
+`subreddits`
   - Define as many target subreddits you want here
   - for some subreddits the post flair is mandatory, in this case, you could supply the `flair_id` and the app will apply the specified flair when making post to this subreddit for this task
 
@@ -114,16 +120,19 @@ If only `crosspost_source_link` or `link` is specified, the app will only attemp
 
 ## FAQ
 
-- **How should I generate and populate tasks to CouchDB**
+ **How should I generate and populate tasks to CouchDB**
+
 Reddit Autopilot sits in the consumer side of the stack and it consumers CouchDB task collections and behave accordingly according to the setup. Users are free to choose any approach in terms of generating and populating task documents to the DB whether it is from an UI application or through custom scripts as different use cases may choose different strageties.
 `Fauxton` is recommended if doing so manually
 https://couchdb.apache.org/fauxton-visual-guide/ 
 
-- **How much does it cost??**
+ **How much does it cost??**
+
 Unlike other similar premium services like Later for Reddit / Delay for Reddit, Reddit Autopilot is open-sources and **completely free**. However, this service focues on routine posting rather than explicit scheduling of posts and does not provide same feature sets as other similar services. 
 Moreover, **there are no daily post limits** imposed. Reddit API rate limiting is the only constraint here. However, keep in mind that it is a bad idea to spam on subreddits and you could be banned from subreddits or even the reddit platform from doing so. 
 
-- **How does Reddit Autopilot post on my behalf?**
+ **How does Reddit Autopilot post on my behalf?**
+
 Reddit Autopilot uses the Reddit API via OAuth2. All the sensitive reddit credentials are configured locally.
 
 ## License
