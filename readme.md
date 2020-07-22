@@ -4,7 +4,7 @@
 
 
 
-A **smart** service for making routine posts to target subreddits with the content pre-configured within the app. A great companion for your online marketing campaign in the Reddit platform.
+A **smart** service for making routine posts to target subreddits with pre-configured content. A great companion for your online marketing campaign in the Reddit platform.
 
 Configure, Run, and Autopilot!
 
