@@ -31,7 +31,7 @@ def _handle_ratelimit(function):
 
 class RedditService:
     def __init__(self):
-        self._reddit = praw.Reddit("crosspost")
+        self._reddit = praw.Reddit()
         self._reddit.validate_on_submit = True
         self._username = self._reddit.user.me().name
 

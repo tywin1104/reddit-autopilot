@@ -1,14 +1,31 @@
+# Credentials for CouchDB
 couchdb:
     host: ""
     username: ""
     password: ""
 
 app:
+    # the time window between which new posts are allowed to be made
     running_window_start_hour: 9
     running_window_end_hour: 23
+    # minimum time intervals required for two consecutive submissions made to the same subreddit
+    # this defines a HARD limit - no two consecutive submissions could be made within this limit
     min_reposting_delay: 12
+    # minimum time intervals required for two consecutive submissions made to the same subreddit
+    # this defines a HARD requirement - if previous submission made to the same subreddit is over
+    # the delay, new submission will be allowed regardless of any other conditions
     max_reposting_delay: 24
+    # if time of previous submission made to the same subreddit is between the min and max reposting delay
+    # new submission is allowed to be made if no previous submissions are found in the top feeds of that subreddit
+    # this is in place to prevent accidentially spamming a subreddit even though the reposting delay is satisfied
+    # the shreshold definds how many posts this mechanism is going to check for a given subreddit
     subreddit_frontpage_shreshold: 10
+    # time in seconds for the app to run for each round
+    # at each round it will attemps to complete all uncompleted tasks
     run_interval_seconds: 3600
+    # Currently supports two operation modes
+    # 1) crosspost + direct_link_post (fallback)  deafult(when this option is set to true)
+    # 2) direct_link_post only (set this option to false)
     crosspost: true
-    nsfw: false
+    # If the submission content is catagoried as NSFW
+    nsfw: true

@@ -45,7 +45,7 @@ class Executor:
     def __init__(
         self, reddit, db,
         running_window=(8, 22),
-        min_reposting_dalay=12,
+        min_reposting_delay=12,
         max_reposting_delay=24,
         subreddit_frontpage_shreshold=10,
         run_interval_seconds=3600,
@@ -56,18 +56,21 @@ class Executor:
         self._db = db
         # only allow postes to be made during running_window
         self._running_window = running_window
-        self._min_reposting_dalay = min_reposting_dalay
+        self._min_reposting_delay = min_reposting_delay
         self._max_reposting_delay = max_reposting_delay
         self._subreddit_frontpage_shreshold = subreddit_frontpage_shreshold
         self._run_interval_seconds = run_interval_seconds
-        self._crosspost = crosspost
+        self._crosspost_enabled = crosspost
         self._nsfw = nsfw
 
     def _crosspost(self, task, subreddit, flair_id):
         '''
         Crosspost existing reddit submission to other subs
         '''
-        crosspost_source_link = task['link']
+        crosspost_source_link = task.get('crosspost_source_link', None)
+        if not crosspost_source_link:
+            raise ValueError('No crosspost source link found for this task')
+
         _, post_url = self._reddit.crosspost(subreddit, crosspost_source_link, flair_id=flair_id, nsfw=self._nsfw)
         logging.info(f'{post_url} crossposted successfully')
 
@@ -87,7 +90,7 @@ class Executor:
         '''
         link = task.get('link', None)
         if not link:
-            return ValueError('No link found within the task document to perform direct post. Skip this subreddit')
+            raise ValueError('No link found within the task document to perform direct post. Skip this subreddit')
 
         # use the same title as used in existing_submission
         crosspost_source_link = task.get('crosspost_source_link', None)
@@ -131,7 +134,7 @@ class Executor:
                 # If crosspost option is enabled, use crosspost first
                 # Otherwise only attempts to make direct post submissions
                 operations = [self._crosspost, self._post_direct]
-                if not self._crosspost:
+                if not self._crosspost_enabled:
                     operations = [self._post_direct]
 
                 # Only some subreddit_block will have flair_id set
@@ -181,7 +184,7 @@ class Executor:
 
         # Do not repost to the same subreddit within the min thereshold period
         # this is in place to prevent spamming the subreddits
-        min_delay = self._min_reposting_dalay
+        min_delay = self._min_reposting_delay
 
         if Executor._within_last_hours(last_posted_time, min_delay):
             logging.info(
