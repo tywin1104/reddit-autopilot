@@ -126,9 +126,9 @@ Reddit Autopilot sits on the consumer side of the stack and it consumers CouchDB
 `Fauxton` is recommended if doing so manually
 https://couchdb.apache.org/fauxton-visual-guide/ 
 
- **How much does it cost??**
+ **How much does it cost?**
 
-Unlike other similar premium services like Later for Reddit / Delay for Reddit, Reddit Autopilot is is open-sourced and **completely free**. However, this service focuses on continueous routine posting rather than explicit scheduling of posts and thus does not provide same feature sets as other similar services. 
+Unlike other similar premium services like Later for Reddit / Delay for Reddit, Reddit Autopilot is open-sourced and **completely free**. However, this service focuses on continueous routine posting rather than explicit scheduling of posts and thus does not provide same feature sets as other similar services. 
 Moreover, **there are no daily post limits** imposed. Reddit API rate limiting is the only constraint here. However, keep in mind that it is a bad idea to spam on subreddits and you could be banned from subreddits or even the Reddit platform from doing so. 
 
  **How does Reddit Autopilot post on my behalf?**
