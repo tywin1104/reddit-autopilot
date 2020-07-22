@@ -112,9 +112,9 @@ class Executor:
         logging.info(f'{post_url} posted successfully')
 
         # Schedule async jobs to reply the post
-        if task.get('reply_link', None):
-            schedule_reply(submission, task['reply_link'])
-            logging.info('Reply task scheduled')
+        if task.get('reply_content', None):
+            schedule_reply(submission, task['reply_content'])
+            logging.info('Reply scheduled')
 
         return post_url
 
