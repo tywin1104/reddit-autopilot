@@ -67,7 +67,13 @@ user_agent=<platform>:<app ID>:<version string> (by u/<Reddit username>
 
 Start adding a few task JSONs to the CouchDB `tasks` collections and run the app `python main.py` to start processing all uncompleted tasks! (See below for the format of task JSON documents)
 
-If some of your tasks are configured with auto-reply, you would need to start a separate terminal session and run `huey_consumer.py my_app.huey -k process -w 4` This process needs to be kept alive while handling all configured auto-replies for your tasks.
+If some of your tasks are configured with auto-reply, you would need to start a separate terminal session and run
+
+```
+huey_consumer.py src.jobs.huey 
+```
+
+This process needs to be kept alive while handling all configured auto-replies for your tasks.
 
 
 ---
@@ -84,19 +90,18 @@ In general, the task JSON document should have the below format:
     "completed": false,
     "subreddits": [
         {
-            "name": "subreddit1",
-            "posted": false
+            "name": "subreddit1"
         },
         {
             "name": "subreddit2",
-            "posted": false,
         },
         {
             "name": "subreddit3",
-            "posted": false,
             "flair_id": "acfg4c2c-b45c-12ea-a9ob-0e8bd1d23233"
         }
-    ]
+    ],
+    "nsfw": false,
+    "title": "title"
 }
 ```
 
@@ -104,13 +109,20 @@ In general, the task JSON document should have the below format:
 
 `crosspost_source_link` -> A reddit post that serves as the source for crossposting.
 
-`reply_content` -> Markdown format for the reply content
+
+`reply_content` -> Markdown format for the reply content (Optional)
+
+`title` -> Title string if intend to post directly
+
+`nsfw` -> NSFW option (Default option is false)
 
 These three fields above determins the mode of opeartions to post for this task.
 
 
 > when both `crosspost_source_link` and `link` are set, the app will attempt to crosspost from the source and if fails, will direct post the link as a fallback plan.
 If only one of `crosspost_source_link` or `link` is specified, the app will only attempt the desired single opeartion. 
+
+**!!** Title (for direct post) must be supplied if crosspost_source_link is not specified
 
 `subreddits`
   - Define as many target subreddits you want here
