@@ -40,7 +40,6 @@ if __name__ == "__main__":
         min_reposting_delay=app_config['min_reposting_delay'],
         max_reposting_delay=app_config['max_reposting_delay'],
         subreddit_frontpage_shreshold=app_config['subreddit_frontpage_shreshold'],
-        run_interval_seconds=app_config['run_interval_seconds'],
-        nsfw=app_config['nsfw']
+        run_interval_seconds=app_config['run_interval_seconds']
     )
     executor.run()

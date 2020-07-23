@@ -36,19 +36,6 @@ class Executor:
         self._subreddit_frontpage_shreshold = subreddit_frontpage_shreshold
         self._run_interval_seconds = run_interval_seconds
 
-    def _crosspost(self, task, subreddit):
-        '''
-        Crosspost existing reddit submission to other subs
-        '''
-        crosspost_source_link = task.crosspost_source_link
-        if not crosspost_source_link:
-            raise ValueError('No crosspost source link found for this task')
-
-        post_url = self._reddit.crosspost(subreddit.name, crosspost_source_link, flair_id=subreddit.flair_id, nsfw=task.nsfw)
-        logging.info(f'{post_url} crossposted successfully')
-
-        return post_url
-
     def _get_operations(self, task):
         '''
         Get desired operation modes from the given task
@@ -63,10 +50,37 @@ class Executor:
         if not operations:
             raise ValueError('Invalid task document. Neither crosspost target nor direct link found')
 
-    def _is_in_running_window(self):
-        hour = datetime.now().hour
+        return operations
+
+    def _is_in_running_window(self, timestamp):
+        hour = timestamp.hour
         start, end = self._running_window
         return start <= hour <= end
+
+    def _get_title(self, task):
+        '''
+        Get title from a given task. Use same title of the crosspost_source if exists
+        '''
+        crosspost_source_link = task.crosspost_source_link
+        if crosspost_source_link:
+            if "reddit.com" not in crosspost_source_link:
+                raise ValueError(f'Invalid crosspost target: {crosspost_source_link} not a proper reddit submission')
+
+            return self._reddit.get_post_title(crosspost_source_link)
+        return task.title
+
+    def _crosspost(self, task, subreddit):
+        '''
+        Crosspost existing reddit submission to other subs
+        '''
+        crosspost_source_link = task.crosspost_source_link
+        if not crosspost_source_link:
+            raise ValueError('No crosspost source link found for this task')
+
+        post_url = self._reddit.crosspost(subreddit.name, crosspost_source_link, flair_id=subreddit.flair_id, nsfw=task.nsfw)
+        logging.info(f'{post_url} crossposted successfully')
+
+        return post_url
 
     def _post_direct(self, task, subreddit):
         '''
@@ -79,19 +93,11 @@ class Executor:
         if not link:
             raise ValueError('No link found within the task document to perform direct post. Skip this subreddit')
 
-        # use the same title as used in existing_submission
-        crosspost_source_link = task.crosspost_source_link
-        if crosspost_source_link:
-            if "reddit.com" not in crosspost_source_link:
-                raise ValueError(f'Invalid crosspost target: {crosspost_source_link} not a proper reddit submission')
-
-            title = self._reddit.get_post_title(crosspost_source_link)
-        else:
-            title = task.title
+        title = self._get_title(task)
 
         if not title:
             raise ValueError(
-                'Invalid task: unable to determine title for new submission.' +
+                'Invalid task: unable to determine title for new submission. ' +
                 'Either crosspost target or title field should be nonempty.'
             )
 
@@ -100,53 +106,51 @@ class Executor:
 
         # Schedule async jobs to reply the post
         if task.reply_content:
-            schedule_reply(submission, task.reply_content)
+            schedule_reply(submission, task.reply_content, self._reddit)
             logging.info('Reply scheduled')
 
         return post_url
 
+    def _process_subreddit_in_task(self, task, subreddit, operations):
+        '''
+        Process one subreddit within a given task
+        Return if new post is made from the processing of this subreddit
+        '''
+        for op_func in operations:
+            try:
+                post_url = op_func(task, subreddit)
+                self._update_documents_on_success(task, subreddit, post_url)
+                return True
+            except praw.exceptions.RedditAPIException as api_exception:
+                if Executor._is_crosspost_forbidden_error(api_exception):
+                    logging.warning(f'Crosspost not allowed on subreddit [{subreddit.name}], will make a direct post')
+                    continue
+                else:
+                    raise
+            except Exception as e:
+                logging.error(f'Failed to process task [{task.id}] on subreddit [{subreddit.name}]: {e}')
+                self._update_documents_on_error(task, subreddit, e)
+        return False
+
     def _process_task(self, task):
         logging.info(f'Start processing task [{task.id}]')
         subreddits = task.subreddits
+        # Get the mode of opeartions from the task document
+        # This allows flexible mode defined per task
+        operations = self._get_operations(task)
         for subreddit in subreddits:
-            posted = False
-
             subreddit_name = subreddit.name
             logging.info(f'Starting: Task [{task.id}] subreddit [{subreddit_name}]')
 
-            if subreddit.posted:
-                logging.info('Already posted. Skip')
+            if subreddit.processed:
+                logging.info('Already processed. Skip')
             else:
                 record = self._db.subreddit_record.get(subreddit_name)
                 if self._should_post(record, datetime.now()):
-                    # Get the mode of opeartions from the task document
-                    # This allows flexible mode defined per task
-                    operations = self._get_operations(task)
-
-                    # Only some subreddit_block will have flair_id set
-                    # as it is not a mandtory requirement of most subreddits
-                    flair_id = subreddit.flair_id
-
-                    for op_func in operations:
-                        try:
-                            post_url = op_func(task, subreddit, flair_id)
-                            posted = True
-                        except praw.exceptions.RedditAPIException as api_exception:
-                            if Executor._is_crosspost_forbidden_error(api_exception):
-                                logging.warning(f'Crosspost not allowed on subreddit [{subreddit_name}], will make a direct post')
-                                continue
-                            else:
-                                raise
-                        except Exception as e:
-                            logging.error(f'Failed to process task [{task.id}] on subreddit [{subreddit_name}]: {e}')
-                            self._update_documents_on_error(task, subreddit, e)
-                        finally:
-                            if posted:
-                                # Either crosspost or direct post is made, update db records
-                                self._update_documents_on_success(task, subreddit, post_url)
-                                # short period of sleep to prevent spamming per reddit's policy
-                                sleep_with_progess(60)
-                            break
+                    posted = self._process_subreddit_in_task(task, subreddit, operations)
+                    if posted:
+                        # sleep for a short period after each successful post
+                        sleep_with_progess(60)
 
     def _process_tasks(self):
         uncompleted_tasks = self._db.task.get_uncompleted()
@@ -166,7 +170,7 @@ class Executor:
             )
             return True
 
-        subreddit_name = record['name']
+        subreddit_name = record['_id']
         last_posted_time = datetime.fromtimestamp(record['lastPostedTimestamp'])
 
         # Do not repost to the same subreddit within the min thereshold period
@@ -222,10 +226,10 @@ class Executor:
 
     def _update_documents_on_success(self, task, subreddit, submission_url):
         timestamp = time.time()
-        updated_task = task.update_on_success(task, subreddit, timestamp, submission_url)
+        task.update_on_success(subreddit, timestamp, submission_url)
 
         # Update task in db
-        self._db.task.update(Task.to_dict(updated_task))
+        self._db.task.update(Task.to_dict(task))
 
         # Update subreddit_last_posted record
         self._db.subreddit_record.upsert(subreddit.name, {
@@ -235,14 +239,14 @@ class Executor:
 
     def _update_documents_on_error(self, task, subreddit, error):
         timestamp = time.time()
-        updated_task = task.update_on_error(task, subreddit, timestamp, error)
+        task.update_on_error(subreddit, timestamp, error)
 
         # Update task in db
-        self._db.task.update(Task.to_dict(updated_task))
+        self._db.task.update(Task.to_dict(task))
 
     def run(self):
         while True:
-            if self._is_in_running_window():
+            if self._is_in_running_window(datetime.now()):
                 logging.info("In running window. Starting processing tasks")
                 self._process_tasks()
             else:

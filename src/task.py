@@ -1,7 +1,10 @@
+import copy
+
+
 class Task:
     def __init__(
         self, id,
-        link, crosspost_source_link, reply_content,
+        link="", crosspost_source_link="", reply_content="",
         completed=False,
         subreddits=[],
         last_updated_timestamp="", title="", nsfw=False
@@ -32,39 +35,41 @@ class Task:
 
     @classmethod
     def to_dict(cls, obj):
-        if isinstance(obj, cls):
-            obj.__dict__["_id"] = obj.__dict__.pop("id")
-        obj.__dict__['subreddits'] = list(map(SubredditTask.to_dict, obj.subreddits))
+        return_dict = copy.deepcopy(obj.__dict__)
+        return_dict["_id"] = return_dict.pop("id")
+        return_dict['subreddits'] = list(map(SubredditTask.to_dict, obj.subreddits))
+        # if isinstance(obj, cls):
+            # obj.__dict__["_id"] = obj.__dict__["id"]
+        # obj.__dict__['subreddits'] = list(map(SubredditTask.to_dict, obj.subreddits))
 
-        return obj.__dict__
+        # return obj.__dict__
+        return return_dict
 
     def update_on_success(self, subreddit, timestamp, post_url):
         subreddit.link = post_url
-        subreddit.posted = True
+        subreddit.processed = True
         subreddit.timestamp = timestamp
 
         # Check completeness of the whole task
-        done = True
+        completed = True
         for item in self.subreddits:
-            if not item.posted:
-                done = False
-        if done:
-            self.completed = True
+            if not item.processed:
+                completed = False
+        self.completed = completed
 
         self.last_updated_timestamp = timestamp
 
     def update_on_error(self, subreddit, timestamp, error):
-        subreddit.posted = False
+        subreddit.processed = True
         subreddit.timestamp = timestamp
         subreddit.error = str(error)
 
         # Check completeness of the whole task
-        done = True
+        completed = True
         for item in self.subreddits:
-            if not item.posted:
-                done = False
-        if done:
-            self.completed = True
+            if not item.processed:
+                completed = False
+        self.completed = completed
 
         self.last_updated_timestamp = timestamp
 
@@ -73,8 +78,8 @@ class Task:
 
 
 class SubredditTask:
-    def __init__(self, name, link="", timestamp="", posted=False, flair_id="", error=None):
-        self.name, self.posted, self.link, self.timestamp = name, posted, link, timestamp
+    def __init__(self, name, link="", timestamp="", processed=False, flair_id="", error=None):
+        self.name, self.processed, self.link, self.timestamp = name, processed, link, timestamp
         self.flair_id = flair_id
         self.error = error
 
@@ -82,7 +87,7 @@ class SubredditTask:
     def from_dict(cls, dict):
         return cls(
             name=dict.get('name', ""),
-            posted=dict.get('posted', ""),
+            processed=dict.get('processed', False),
             timestamp=dict.get('timestamp', ""),
             link=dict.get('link', ""),
             flair_id=dict.get('flair_id', ""),
