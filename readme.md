@@ -112,9 +112,9 @@ In general, the task JSON document should have the below format:
 
 `reply_content` -> Markdown format for the reply content (Optional)
 
-`title` -> Title string if intend to post directly
+`title` -> Title string if intend to post directly (Optional)
 
-`nsfw` -> NSFW option (Default option is false)
+`nsfw` -> NSFW option (Optional, default to false)
 
 These three fields above determins the mode of opeartions to post for this task.
 
