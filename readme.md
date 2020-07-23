@@ -122,7 +122,9 @@ These three fields above determins the mode of opeartions to post for this task.
 > when both `crosspost_source_link` and `link` are set, the app will attempt to crosspost from the source and if fails, will direct post the link as a fallback plan.
 If only one of `crosspost_source_link` or `link` is specified, the app will only attempt the desired single opeartion. 
 
-**!!** Title (for direct post) must be supplied if crosspost_source_link is not specified
+**Valid task document must contains either `crosspost_source_link` or `link`**
+
+**Title (for direct post) must be supplied if crosspost_source_link is not specified**
 
 `subreddits`
   - Define as many target subreddits you want here
