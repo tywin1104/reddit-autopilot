@@ -1,9 +1,10 @@
 import logging
+import praw
 import yaml
-from reddit import RedditService
-from db import DbService
-from db.couchdb import CouchdbService
-from executor import Executor
+from src.reddit import RedditService
+from src.db import DbService
+from src.db.couchdb import CouchdbService
+from src.executor import Executor
 import coloredlogs
 
 
@@ -19,7 +20,7 @@ with open("configs.yaml", 'r') as stream:
     config = yaml.safe_load(stream)
 
 
-reddit = RedditService()
+reddit = RedditService(praw.Reddit())
 
 couchdb_engine = CouchdbService(
     url=config['couchdb']['host'],

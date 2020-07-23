@@ -1,5 +1,7 @@
-from config import huey
-from reddit import RedditService
+from .reddit import RedditService
+from huey import SqliteHuey
+
+huey = SqliteHuey('testing')
 
 
 @huey.task(retries=10, retry_delay=300)

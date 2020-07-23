@@ -2,7 +2,7 @@ import functools
 import logging
 import re
 import praw
-from utils import sleep_with_progess
+from .utils import sleep_with_progess
 
 
 def _handle_ratelimit(function):
@@ -30,8 +30,8 @@ def _handle_ratelimit(function):
 
 
 class RedditService:
-    def __init__(self):
-        self._reddit = praw.Reddit()
+    def __init__(self, reddit):
+        self._reddit = reddit
         self._reddit.validate_on_submit = True
         self._username = self._reddit.user.me().name
 
@@ -51,7 +51,7 @@ class RedditService:
             flair_id=flair_id
         )
 
-        return (crosspost_submission, reddit_base_url + crosspost_submission.permalink)
+        return reddit_base_url + crosspost_submission.permalink
 
     def get_post_title(self, post_url):
         submission = self._reddit.submission(url=post_url)

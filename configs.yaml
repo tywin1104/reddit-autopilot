@@ -23,5 +23,3 @@ app:
     # time in seconds for the app to run for each round
     # at each round it will attemps to complete all uncompleted tasks
     run_interval_seconds: 3600
-    # If the submission content is catagoried as NSFW
-    nsfw: true

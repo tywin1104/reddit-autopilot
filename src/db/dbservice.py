@@ -11,30 +11,6 @@ class DbService:
         )
 
 
-'''
-Task db service deals with task related db operations
-Task document should be in the shape of
-
-{
-    "_id": "123",
-    "link": "https://link"
-    "crosspost_source_link": "https://www.reddit.com/r/example/comments/hvcqse/example/",
-    "reply_content": "content to reply to the newly made posts. Markdown format",
-    "completed": false,
-    "subreddits": [
-        {
-            "name": "subreddit2",
-            "posted": false
-        },
-        {
-            "name": "subreddit3",
-            "posted": false,
-        }
-    ]
-}
-'''
-
-
 class TaskDbService:
     def __init__(self, db):
         self.db = db
@@ -52,16 +28,6 @@ class TaskDbService:
 
     def update(self, new_task):
         self.db.update_doc(new_task)
-
-
-'''
-SubredditLastPosted db service keep track of posts being made to various subreddits
-record document should be in the shape of
-{
-    "_id": "subredditname",
-    "lastPostedTimestamp": linux-timestamp-num
-}
-'''
 
 
 class SubredditLastPostedDbService:
